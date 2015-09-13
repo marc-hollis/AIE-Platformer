@@ -32,7 +32,8 @@ function getDeltaTime()
 var SCREEN_WIDTH = canvas.width;
 var SCREEN_HEIGHT = canvas.height;
 //Background Variables
-var LAYER_COUNT = 2;
+var LAYER_COUNT = 3;
+var LAYER_WATER = 0;
 var LAYER_PLATFORMS = 1;
 var LAYER_LADDERS = 2;
 var MAP = {tw: 40, th: 18};
@@ -43,24 +44,25 @@ var TILESET_SPACING = 2;
 var TILESET_COUNT_X = 14;
 var TILESET_COUNT_Y = 14;
 var BULLET_SPEED = 0.03;
+var STATE_SPLASH = 0;
+var STATE_GAME = 1;
+var STATE_GAMEOVER = 2;
+var gameState = STATE_SPLASH;
 
 //Force Variables
-//Abitrary choice for one meter
 var METER = TILE;
-//Super gravity (6 times normal)
 var GRAVITY = METER * 9.8 * 6;
-//Max horizontal speed (ten tiles per second)
 var MAXDX = METER * 10;
-//Max vertical speed (ten tiles per second)
 var MAXDY = METER * 15;
-//Horizontal acceleration (takes 1/2 of a second to reach max)
 var ACCEL = MAXDX * 2;
-//Horizontal friction (takes 1/6 of a second to stop from max)
 var FRICTION = MAXDX * 6;
-//A large, instant jump impulse
-var JUMP = METER * 2000;
-var cells = []; //The array that holds the simplified collision data
+var JUMP = METER * 1500;
 
+timer = 60;
+var score = 0;
+var lives = 3;
+var heartImage = document.createElement("img");
+heartImage.src = "pictures/heart.png";
 // some variables to calculate the Frames Per Second (FPS - this tells use
 // how fast our game is running, and allows us to make the game run at a 
 // constant speed)
@@ -78,25 +80,23 @@ var enemy = new Enemy();
 var keyboard = new Keyboard();
 
 function cellAtPixelCoord(layer, x, y) {
-	if(x < 0 || x > SCREEN_WIDTH ||  y < 0) {
+	if(x < 0 || x > SCREEN_WIDTH || y < 0) {
 		return 1;
 	}
-	//Let the player drop to the bottom of the screen (death)
-	if(y>SCREEN_HEIGHT) {
+	if(y < SCREEN_HEIGHT) {
 		return 0;
 	}
 	return cellAtTileCoord(layer, p2t(x), p2t(y));
 };
 
 function cellAtTileCoord(layer, tx, ty) {
-	if(tx < 0 || tx >= Map.tw || ty < 0) {
+	if(tx < 0 || tx >= MAP.tw || ty < 0) {
 		return 1;
 	}
-	//Let the player drop to the bottom of the screen (death)
-	if(ty >= Map.th) {
+	if(ty >= MAP.th) {
 		return 0;
 	}
-	return cells[layer][tx][ty];
+	return cells[layer][ty][tx];
 };
 
 function tileToPixel(tile) {
@@ -106,16 +106,16 @@ function tileToPixel(tile) {
 function pixelToTile(pixel) {
 	return Math.floor(pixel/TILE);
 };
-
 function bound(value, min, max) {
 	if(value < min) {
 		return min;
 	}
 	if(value > max) {
 		return max;
-	}
+	}	
 	return value;
 }
+
 
 //~~~~~~~~~~~~~~~~~~~Drawing the level~~~~~~~~~~~//											<--------Level Drawing
 function drawMap() {
@@ -137,29 +137,102 @@ function drawMap() {
 	}
 }
 
+var cells = [];  //The array that holds the collision data
 function initialize() {
-	for(var layerIdx = 0; layerIdx < LAYER_COUNT; layerIdx++) { //Initialize the collision map
+	for(var layerIdx = 0; layerIdx < LAYER_COUNT; layerIdx++) { //initialize the collision map
 		cells[layerIdx] = [];
 		var idx = 0;
-		for(var y = 0; y < level1.layers[0].height; y++) {
+		for(var y = 0; y < level1.layers[layerIdx].height; y++) {
 			cells[layerIdx][y] = [];
 			for(var x = 0; x < level1.layers[layerIdx].width; x++) {
 				if(level1.layers[layerIdx].data[idx] != 0) {
-					//for each tile we find in the layer data, we need to create 4 collisions
-					//(because our collision squares are 35x35 but the tile in the
-					//level are 70x70)
 					cells[layerIdx][y][x] = 1;
 					cells[layerIdx][y-1][x] = 1;
-					cells[layerIdx][y-1][x+1] = 1;
 					cells[layerIdx][y][x+1] = 1;
+					cells[layerIdx][y-1][x+1] = 1;
 				}
 				else if(cells[layerIdx][y][x] != 1) {
-					//If we haven't set this cells value, then set it to 0 now
 					cells[layerIdx][y][x] = 0;
 				}
 				idx++;
 			}
 		}
+	}
+}
+
+
+function runSplash(deltaTime) {
+	context.fillStyle = "#ccc";		
+	context.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+	
+	context.fillStyle = "#000000";
+	context.font="20px Arial";
+	context.fillText("Click Space to Start", SCREEN_WIDTH/2-100, SCREEN_HEIGHT/2);
+	
+	if(keyboard.isKeyDown(keyboard.KEY_SPACE) == true) {
+		gameState = STATE_GAME;
+	}
+}
+
+function runGame(deltaTime) {
+	player.update(deltaTime);
+	drawMap();
+	player.draw();
+	enemy.draw();
+	
+	//Score
+	context.fillStyle = "black";
+	context.font = "28px Comic Sans MS";
+	var scoreText = "Score: " + score;
+	context.fillText(scoreText, 0, 50);
+	
+	//Life counter
+	for(var i=0; i<lives; i++) {
+		context.drawImage(heartImage, (canvas.width-100) + ((heartImage.width+2)*i), 30);
+	}
+	// update the frame counter 
+	fpsTime += deltaTime;
+	fpsCount++;
+	if(fpsTime >= 1) {
+		fpsTime -= 1;
+		fps = fpsCount;
+		fpsCount = 0;
+	}
+	if(timer >= 0) {
+		timer-=deltaTime;
+	}
+	else {
+		gameState = STATE_GAMEOVER;
+	}
+	
+	//if(bullet hits enemy) 
+	//	enemy.dead = true
+	//	bullet.dead == true
+	//	score += 1;
+	
+	if(lives <= 0) {
+		gameState = STATE_GAMEOVER;
+	}
+	
+	//Draw the FPS and Time Left
+	context.fillStyle = "#f00";
+	context.font="16px Arial";
+	context.fillText("FPS: " + fps, 5, 20, 100);
+	context.fillText("Time Left: " + timer, SCREEN_WIDTH-95, 20);
+}
+
+function runGameOver(deltaTime) {
+	context.fillStyle = "#ccc";		
+	context.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+	context.fillStyle = "#000000";
+	context.font="20px Arial";
+	context.fillText("Game Over", SCREEN_WIDTH/2-100, SCREEN_HEIGHT/2);
+	context.fillText("Press SPACE to Reset", SCREEN_WIDTH/2-100, SCREEN_HEIGHT/2+30);
+	if(keyboard.isKeyDown(keyboard.KEY_SPACE)) {
+		lives = 3;
+		timer = 60;
+		score = 0;
+		gameState = STATE_GAME;
 	}
 }
 
@@ -171,28 +244,19 @@ function run()
 	
 	var deltaTime = getDeltaTime();
 	
-	player.update(deltaTime);
-	drawMap();
-	player.draw();
-	enemy.draw();
-		
-	// update the frame counter 
-	fpsTime += deltaTime;
-	fpsCount++;
-	if(fpsTime >= 1)
-	{
-		fpsTime -= 1;
-		fps = fpsCount;
-		fpsCount = 0;
-	}		
-		
-	// draw the FPS
-	context.fillStyle = "#f00";
-	context.font="14px Arial";
-	context.fillText("FPS: " + fps, 5, 20, 100);
+	switch(gameState) {
+		case STATE_SPLASH:
+			runSplash(deltaTime);
+			break;
+		case STATE_GAME:
+			runGame(deltaTime);
+			break;
+		case STATE_GAMEOVER:
+			runGameOver(deltaTime);
+			break;
+	}
 }
 initialize();
-
 //-------------------- Don't modify anything below here
 
 
