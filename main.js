@@ -31,6 +31,7 @@ function getDeltaTime()
 
 var SCREEN_WIDTH = canvas.width;
 var SCREEN_HEIGHT = canvas.height;
+
 //Background Variables
 var LAYER_COUNT = 3;
 var LAYER_WATER = 0;
@@ -58,9 +59,19 @@ var ACCEL = MAXDX * 2;
 var FRICTION = MAXDX * 6;
 var JUMP = METER * 1500;
 
-timer = 60;
+var ENEMY_MAXDX = METER * 5;
+var ENEMY_ACCEL = ENEMY_MAXDX * 2;
+
+var enemies = [];
+
+var LAYER_OBJECT_ENEMIES = 3;
+var LAYER_OBJECT_TRIGGERS = 4;
+
+var timer = 120;
+var second = 1;
 var score = 0;
 var lives = 3;
+var bullet = new Bullet();
 var heartImage = document.createElement("img");
 heartImage.src = "pictures/heart.png";
 // some variables to calculate the Frames Per Second (FPS - this tells use
@@ -116,20 +127,38 @@ function bound(value, min, max) {
 	return value;
 }
 
-
 //~~~~~~~~~~~~~~~~~~~Drawing the level~~~~~~~~~~~//											<--------Level Drawing
+var worldOffsetX = 0;
 function drawMap() {
+	//Sidescrolling Variables
+	var startX = -1;
+	var maxTiles = Math.floor(SCREEN_WIDTH/TILE) + 2;
+	var tileX = pixelToTile(player.position.x);
+	var offsetX = TILE + Math.floor(player.position.x%TILE);
+	
+	startX = tileX - Math.floor(maxTiles/2);
+	if(startX < -1) {
+		startX = 0;
+		offsetX = 0;
+	}
+	if(startX > MAP.tw - maxTiles) {
+		startX = MAP.tw - maxTiles + 1;
+		offsetX = TILE;
+	}
+	
+	worldOffsetX = startX * TILE + offsetX;
+	
 	for(var layerIdx=0; layerIdx<LAYER_COUNT; layerIdx++) {
-		var idx = 0;
 		for( var y = 0; y < level1.layers[layerIdx].height; y++ ) {
-			for( var x = 0; x < level1.layers[layerIdx].width; x++ ) {
+			var idx = y * level1.layers[layerIdx].width + startX;
+			for( var x = startX; x < startX + maxTiles; x++ ) {
 				if( level1.layers[layerIdx].data[idx] != 0 ) {
 					// the tiles in the Tiled map are base 1 (meaning a value of 0 means no tile), so subtract one from the tileset id to get the
 					// correct tile
 					var tileIndex = level1.layers[layerIdx].data[idx] - 1;
 					var sx = TILESET_PADDING + (tileIndex % TILESET_COUNT_X) * (TILESET_TILE + TILESET_SPACING);
 					var sy = TILESET_PADDING + (Math.floor(tileIndex / TILESET_COUNT_Y)) * (TILESET_TILE + TILESET_SPACING);
-					context.drawImage(tileset, sx, sy, TILESET_TILE, TILESET_TILE, x*TILE, (y-1)*TILE, TILESET_TILE, TILESET_TILE);
+					context.drawImage(tileset, sx, sy, TILESET_TILE, TILESET_TILE, (x-startX)*TILE-offsetX, (y-1)*TILE, TILESET_TILE, TILESET_TILE);
 				}
 				idx++;
 			}
@@ -138,6 +167,8 @@ function drawMap() {
 }
 
 var cells = [];  //The array that holds the collision data
+var musicBackground;
+var sfxFire
 function initialize() {
 	for(var layerIdx = 0; layerIdx < LAYER_COUNT; layerIdx++) { //initialize the collision map
 		cells[layerIdx] = [];
@@ -158,6 +189,36 @@ function initialize() {
 			}
 		}
 	}
+	
+	idx = 0;
+	for(y = 0; y < level1.layers[LAYER_OBJECT_ENEMIES].height; y++) {
+		for(var x = 0; x < level1.layers[LAYER_OBJECT_ENEMIES].width; x++) {
+			if(level1.layers[LAYER_OBJECT_ENEMIES].data[idx] != 0) {
+				var px = tileToPixel(x);
+				var py = tileToPixel(y);
+				var e = new Enemy(px, py);
+				enemies.push(e);
+			}
+			idx++;
+		}
+	}
+	
+	musicBackground = new Howl( {
+		urls: ["sounds/background.ogg"],
+		loop: true,
+		buffer: true,
+		volume: 0.1
+	});
+	musicBackground.play();
+	
+	sfxFire = new Howl({
+		urls: ["sounds/fireEffect.ogg"],
+		buffer: true,
+		volume: 1,
+		onend: function() {
+			isSfxPlaying = false;
+		}
+	});
 }
 
 
@@ -175,11 +236,15 @@ function runSplash(deltaTime) {
 }
 
 function runGame(deltaTime) {
+	for(var i = 0; i < enemies.length; i++) {
+		enemies[i].draw(deltaTime);
+	}
+	for(var i = 0; i < enemies.length; i++) {
+		enemies[i].update(deltaTime);
+	}
 	player.update(deltaTime);
 	drawMap();
 	player.draw();
-	enemy.draw();
-	
 	//Score
 	context.fillStyle = "black";
 	context.font = "28px Comic Sans MS";
@@ -198,8 +263,13 @@ function runGame(deltaTime) {
 		fps = fpsCount;
 		fpsCount = 0;
 	}
+	
 	if(timer >= 0) {
-		timer-=deltaTime;
+		second -= deltaTime;
+		if(second < 0) {
+			timer -= 1;
+			second = 1;
+		}
 	}
 	else {
 		gameState = STATE_GAMEOVER;
@@ -218,7 +288,7 @@ function runGame(deltaTime) {
 	context.fillStyle = "#f00";
 	context.font="16px Arial";
 	context.fillText("FPS: " + fps, 5, 20, 100);
-	context.fillText("Time Left: " + timer, SCREEN_WIDTH-95, 20);
+	context.fillText("Time Left: " + timer, SCREEN_WIDTH-110, 20);
 }
 
 function runGameOver(deltaTime) {
@@ -230,8 +300,9 @@ function runGameOver(deltaTime) {
 	context.fillText("Press SPACE to Reset", SCREEN_WIDTH/2-100, SCREEN_HEIGHT/2+30);
 	if(keyboard.isKeyDown(keyboard.KEY_SPACE)) {
 		lives = 3;
-		timer = 60;
+		timer = 120;
 		score = 0;
+		player.position.set(9*TILE, 0*TILE);
 		gameState = STATE_GAME;
 	}
 }

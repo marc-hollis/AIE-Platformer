@@ -40,6 +40,8 @@ var Player = function() {
 	this.jumping = false;
 	
 	this.direction = RIGHT;
+	
+	this.cooldownTimer = 0;
 };
 
 Player.prototype.update = function(deltaTime) {
@@ -63,10 +65,7 @@ Player.prototype.update = function(deltaTime) {
 		if(this.sprite.currentAnimation != ANIM_WALK_RIGHT && this.jumping == false) {
 			this.sprite.setAnimation(ANIM_WALK_RIGHT);
 		}
-	}
-	else if(keyboard.isKeyDown(keyboard.KEY_SPACE) == true) {
-		jump = true;
-	}
+	} 
 	else {
 		if(this.jumping == false && this.falling == false) {
 			if(this.direction == LEFT) {
@@ -80,6 +79,20 @@ Player.prototype.update = function(deltaTime) {
 		}
 	}
 	
+	if(keyboard.isKeyDown(keyboard.KEY_UP) == true) {
+		jump = true;
+	}
+	if(this.cooldownTimer > 0) {
+		this.cooldownTimer -= deltaTime;
+	}
+	if(keyboard.isKeyDown(keyboard.KEY_SPACE) == true && this.cooldownTimer <= 0) {
+		sfxFire.play();
+		this.cooldownTimer = 0.3;
+		
+		//Shoot a bullet
+		bullet.shoot(deltaTime);
+	}
+
 	var wasleft = this.velocity.x < 0;
 	var wasright = this.velocity.x > 0;
 	var falling = this.falling;
@@ -88,6 +101,10 @@ Player.prototype.update = function(deltaTime) {
 	
 	if(left) {
 		ddx = ddx - ACCEL;	//Player goes left
+		this.direction = LEFT;
+		if(this.sprite.currentAnimation != ANIM_WALK_LEFT && this.jumping == false) {
+			this.sprite.setAnimation(ANIM_WALK_LEFT);
+		}
 	}
 	else if(wasleft) {
 		ddx = ddx + FRICTION;	//Player starts stopping after going left
@@ -171,12 +188,20 @@ Player.prototype.update = function(deltaTime) {
 			this.velocity.x = 0;	//Stop horizontal velocity
 		}
 	}
-	if(this.position.x > SCREEN_WIDTH || this.position.x < 0 || this.position.y > SCREEN_HEIGHT || this.position.y < 0) {
+
+	//Edges of Screen
+	if(this.position.y > SCREEN_HEIGHT || this.position.y < 0) {
 		lives -= 1;
 		this.position.set(9*TILE, 0*TILE);
+	}
+	else if(this.position.x > SCREEN_WIDTH*2) {
+		this.velocity.x = -this.velocity.x;
+	}
+	else if(this.position.x < 0) {
+		this.velocity.x += 2*(this.velocity.x);
 	}
 }
 
 Player.prototype.draw = function() {
-	this.sprite.draw(context, this.position.x-20, this.position.y);
+	this.sprite.draw(context, this.position.x - worldOffsetX, this.position.y);
 }
